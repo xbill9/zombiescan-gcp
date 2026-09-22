@@ -1,0 +1,14 @@
+What Nobody Is Using in Your Google Cloud Projects, and What It Costs
+
+A local-first CLI that scans Google Cloud projects for unused resources, prices each one from the Cloud Billing Catalog API, and drafts the cleanup. One call per project instead of one per region, read-only by default, and a Claude Code plugin over the same engine.
+
+What is in it:
+
+- 🟢 20 checks in two packs across Compute Engine, Cloud SQL, Storage, DNS, KMS, Secret Manager, Artifact Registry, Filestore, Cloud Logging, Cloud Monitoring and GKE
+- 🟢 75 projects swept in 79 seconds, 713 findings, $387.74 a month and $4,652.87 a year
+- 🟢 One call per project: aggregatedList covers every zone and region, and locations/- covers every location for the APIs that accept it
+- 🟢 Prices dated in every report, with the first charging tier read instead of a free tier 0
+
+dev.to: https://dev.to/gde/what-nobody-is-using-in-your-google-cloud-projects-and-what-it-costs-1k0
+Medium: https://xbill999.medium.com/what-nobody-is-using-in-your-google-cloud-projects-and-what-it-costs-6613d745c4bc
+Source: https://github.com/xbill9/zombiescan-gcp

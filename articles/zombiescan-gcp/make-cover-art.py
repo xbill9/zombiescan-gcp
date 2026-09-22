@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Draw this article's cover: house typography on the left, a graveyard of dead
-server racks sinking into a cloud bank on the right.
-
-Racks stand like headstones in three depth tiers, each tier paler and smaller
-than the one in front so the fog reads as distance. Every rack but one has dark
-status lights. The one still lit is the point of the article: the resource
-nobody uses and everybody pays for.
+"""Draw this article's cover: a graveyard of dead server racks sinking into a
+cloud bank, every cabinet dark except the one still lit.
 
 No figures anywhere on the cover. The numbers live in the article.
+
+Two geometries, one picture. dev.to displays a 2.381:1 crop, so its cover is a
+wide band with the type beside the scene. LinkedIn's card is 1200x627, nearly
+half a ratio narrower, and the same side-by-side layout squeezes both halves --
+so there the type stacks above a scene that runs the full width. Fitting the
+dev.to image into LinkedIn's frame instead letterboxes it, which is what
+make-linkedin.py does when nothing better is supplied.
 
 The palette, the fonts, the 2x draw-then-downsample and the content-addressed
 filename all come from the publishing kit's make-cover.py, imported rather than
@@ -15,6 +17,7 @@ copied so a change there reaches this cover too. Only the illustration is local.
 
     python3 make-cover-art.py --out devto-cover.jpg --content-address \
         --url-base https://raw.githubusercontent.com/xbill9/zombiescan-gcp/main/articles/zombiescan-gcp
+    python3 make-cover-art.py --out linkedin-cover.jpg --mode linkedin
 """
 
 import argparse
@@ -30,7 +33,7 @@ spec = importlib.util.spec_from_file_location("make_cover", KIT)
 mc = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mc)
 
-W, H = mc.MODES["devto"]
+MODES = {"devto": mc.MODES["devto"], "linkedin": (1200, 627)}
 S = 2  # draw at 2x, downsample, or type goes soft
 
 SURFACE = mc.SURFACE
@@ -48,8 +51,15 @@ RACK_FAR = (57, 58, 62)
 RACK_MID = (44, 45, 49)
 RACK_NEAR = (23, 24, 27)
 RACK_EDGE = (96, 100, 107)
-DEAD_LED = (78, 81, 87)
 UNIT_LINE = (72, 75, 81)
+DEAD_LED = (78, 81, 87)
+
+# Rack heights per tier, as fractions of the tier's nominal height. Fixed rather
+# than random so the same call always draws the same cover -- a content-addressed
+# filename is meaningless if the bytes move on their own.
+FAR_H = (0.78, 1.06, 0.70, 0.96, 0.75, 1.01, 0.73, 0.93, 0.78, 1.01, 0.73, 0.91, 0.75, 0.83)
+MID_H = (0.84, 1.04, 0.78, 1.00, 0.83, 1.03, 0.80, 0.97, 0.86)
+NEAR_H = (0.83, 1.00, 0.79, 0.86, 0.98, 0.80)
 
 
 def px(v):
@@ -133,15 +143,94 @@ def alive(i, k):
     return (255, 170, 84) if (i + k) % 3 else ORANGE
 
 
-def render(a):
-    base = Image.new("RGBA", (W * S, H * S), SURFACE + (255,))
+def spread(x0, x1, n):
+    """n rack centres across a span, overshooting both edges so the row bleeds."""
+    step = (x1 - x0) / (n - 1)
+    return [x0 + i * step for i in range(n)]
+
+
+def scene(base, x0, x1, baseline, k, lit_at=0.52):
+    """The rack graveyard, laid out across a span and scaled by k.
+
+    lit_at is where the one live cabinet sits, as a fraction of the span. It is
+    kept off centre: dead centre reads as a diagram, off centre as a photograph.
+    """
+    d = ImageDraw.Draw(base)
+    cx, w = (x0 + x1) / 2, x1 - x0
 
     # ---- sky: cold moonlight behind the bank, the only light up there -------
+    glow(base, x0 + w * 0.80, baseline - 320 * k, 170 * k, (86, 102, 122), 40)
+    glow(base, x0 + w * 0.80, baseline - 320 * k, 78 * k, (116, 134, 156), 34)
+    d = ImageDraw.Draw(base)
+
+    # ---- far tier: silhouettes, no detail, lost in the haze ----------------
+    far_base = baseline - 118 * k
+    for x, hf in zip(spread(x0 - 20, x1 + 20, len(FAR_H)), FAR_H):
+        rack(d, x, far_base, 32 * k, 74 * k * hf, RACK_FAR, units=False)
+    cloud(base, far_base - 2, cx, w * 1.16, 48 * k, FOG_FAR, 175, 12 * k)
+    d = ImageDraw.Draw(base)
+
+    # ---- mid tier ----------------------------------------------------------
+    mid_base = baseline - 62 * k
+    for x, hf in zip(spread(x0 - 30, x1 + 30, len(MID_H)), MID_H):
+        rack(d, x, mid_base, 54 * k, 128 * k * hf, RACK_MID)
+    cloud(base, mid_base - 2, cx, w * 1.20, 54 * k, FOG_MID, 195, 13 * k)
+    d = ImageDraw.Draw(base)
+
+    # ---- near tier: the dead cabinets sink into the bank -------------------
+    for x, hf in zip(spread(x0 - 40, x1 + 40, len(NEAR_H)), NEAR_H):
+        rack(d, x, baseline, 78 * k, 190 * k * hf, RACK_NEAR, lamp=dead)
+    cloud(base, baseline - 2, cx, w * 1.26, 60 * k, FOG_NEAR, 215, 14 * k)
+
+    # ---- the one still lit, drawn in FRONT of the bank ---------------------
+    # Behind it, the fog washes the halo out to a brown smear; in front, it is
+    # the only thing on the cover with any colour in it, which is the point.
+    lx, lh = x0 + w * lit_at, 204 * k
+    glow(base, lx, baseline - lh * 0.50, lh * 0.60, ORANGE, 96)
+    glow(base, lx, baseline - 12 * k, 76 * k, ORANGE, 64)
+    d = ImageDraw.Draw(base)
+    rack(d, lx, baseline, 78 * k, lh, RACK_NEAR, lamp=alive)
+    cloud(base, baseline + 4 * k, lx, 300 * k, 34 * k, FOG_NEAR, 120, 12 * k)
+
+
+def scrim_left(base, W, H, upto, power=0.80):
+    """Hold the left side dark so the type over it stays readable."""
+    layer = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer)
+    for i in range(px(upto)):
+        a = int(255 * max(0.0, 1.0 - (i / px(upto)) ** power))
+        d.line((i, 0, i, H * S), fill=SURFACE + (a,))
+    base.alpha_composite(layer)
+
+
+def scrim_top(base, W, H, upto, power=0.90):
+    layer = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer)
+    for i in range(px(upto)):
+        a = int(255 * max(0.0, 1.0 - (i / px(upto)) ** power))
+        d.line((0, i, W * S, i), fill=SURFACE + (a,))
+    base.alpha_composite(layer)
+
+
+EYEBROW = "GOOGLE CLOUD  ·  READ-ONLY SCAN"
+HEAD = ("What Nobody Is Using", "and What It Costs")
+SUB = ("Find the resources still billing,", "priced from the Billing Catalog API")
+FOOT = "zombiescan  ·  github.com/xbill9/zombiescan-gcp  ·  MIT"
+
+
+def scene_devto(base):
+    """The dev.to scene, at the exact positions its published cover was drawn from.
+
+    These were laid out by hand before `scene()` existed. They stay literal
+    because devto-cover.4e999e75.jpg is live on dev.to and a content-addressed
+    filename only means anything while the script still reproduces those bytes;
+    recomputing the positions moved every rack and changed the hash.
+    """
+    d = ImageDraw.Draw(base)
     glow(base, 1228, 150, 170, (86, 102, 122), 40)
     glow(base, 1228, 150, 78, (116, 134, 156), 34)
     d = ImageDraw.Draw(base)
 
-    # ---- far tier: silhouettes, no detail, lost in the haze ----------------
     for x, h in ((706, 60), (752, 82), (800, 54), (850, 74), (902, 58), (956, 78),
                  (1010, 56), (1064, 72), (1118, 60), (1174, 78), (1230, 56),
                  (1286, 70), (1342, 58), (1396, 64)):
@@ -149,50 +238,61 @@ def render(a):
     cloud(base, 350, 1060, 860, 48, FOG_FAR, 175, 12)
     d = ImageDraw.Draw(base)
 
-    # ---- mid tier ----------------------------------------------------------
-    for x, h in ((688, 108), (772, 134), (860, 100), (950, 128),
-                 (1042, 106), (1134, 132), (1228, 102), (1322, 124), (1404, 110)):
+    for x, h in ((688, 108), (772, 134), (860, 100), (950, 128), (1042, 106),
+                 (1134, 132), (1228, 102), (1322, 124), (1404, 110)):
         rack(d, x, 408, 54, h, RACK_MID)
     cloud(base, 406, 1060, 900, 54, FOG_MID, 195, 13)
     d = ImageDraw.Draw(base)
 
-    # ---- near tier: the dead cabinets sink into the bank ------------------
-    near = ((684, 158), (790, 190), (906, 150), (1150, 164), (1274, 186), (1392, 152))
-    for x, h in near:
+    for x, h in ((684, 158), (790, 190), (906, 150),
+                 (1150, 164), (1274, 186), (1392, 152)):
         rack(d, x, 470, 78, h, RACK_NEAR, lamp=dead)
     cloud(base, 468, 1060, 960, 60, FOG_NEAR, 215, 14)
 
-    # ---- the one still lit, drawn in FRONT of the bank ---------------------
-    # Behind it, the fog washes the halo out to a brown smear; in front, it is
-    # the only thing on the cover with any colour in it, which is the point.
     lx, lh = 1026, 204
     glow(base, lx, 470 - lh * 0.50, lh * 0.60, ORANGE, 96)
     glow(base, lx, 458, 76, ORANGE, 64)
     d = ImageDraw.Draw(base)
     rack(d, lx, 470, 78, lh, RACK_NEAR, lamp=alive)
     cloud(base, 474, lx, 300, 34, FOG_NEAR, 120, 12)
-    d = ImageDraw.Draw(base)
 
-    # ---- scrim: hold the type side dark so the headline stays readable ------
-    scrim = Image.new("RGBA", base.size, (0, 0, 0, 0))
-    sd = ImageDraw.Draw(scrim)
-    for i in range(px(780)):
-        alpha = int(255 * max(0.0, 1.0 - (i / px(780)) ** 0.80))
-        sd.line((i, 0, i, H * S), fill=SURFACE + (alpha,))
-    base.alpha_composite(scrim)
-    d = ImageDraw.Draw(base)
 
-    # ---- type, house style -------------------------------------------------
+def render_devto(base, W, H):
+    scene_devto(base)
+    scrim_left(base, W, H, 780)
+    d = ImageDraw.Draw(base)
     pad = 72
-    text(d, (pad, 166), "GOOGLE CLOUD  \u00b7  READ-ONLY SCAN", font(mc.MONO, 18), INK_3)
-    text(d, (pad, 204), "What Nobody Is Using", font(mc.SANS_B, 58), INK)
-    text(d, (pad, 272), "and What It Costs", font(mc.SANS_B, 58), INK)
-    text(d, (pad, 356), "Find the resources still billing,", font(mc.SANS, 27), INK_2)
-    text(d, (pad, 392), "priced from the Billing Catalog API", font(mc.SANS, 27), INK_2)
-
+    text(d, (pad, 166), EYEBROW, font(mc.MONO, 18), INK_3)
+    text(d, (pad, 204), HEAD[0], font(mc.SANS_B, 58), INK)
+    text(d, (pad, 272), HEAD[1], font(mc.SANS_B, 58), INK)
+    text(d, (pad, 356), SUB[0], font(mc.SANS, 27), INK_2)
+    text(d, (pad, 392), SUB[1], font(mc.SANS, 27), INK_2)
     d.rectangle((px(pad), px(516), px(W - pad), px(516) + 1), fill=mc.RULE)
-    text(d, (pad, 534), "zombiescan  \u00b7  github.com/xbill9/zombiescan-gcp  \u00b7  MIT",
-         font(mc.MONO, 18), INK_3)
+    text(d, (pad, 534), FOOT, font(mc.MONO, 18), INK_3)
+
+
+def render_linkedin(base, W, H):
+    """Type stacked over a scene that runs the full width.
+
+    The card is 1.914:1 against dev.to's 2.381:1. Side by side at this width the
+    headline wraps to three lines and the scene loses half its depth, so the
+    layout turns rather than being squeezed.
+    """
+    scene(base, -40, W + 40, 566, 0.95, lit_at=0.60)
+    scrim_top(base, W, H, 400, 1.05)
+    d = ImageDraw.Draw(base)
+    pad = 66
+    text(d, (pad, 74), EYEBROW, font(mc.MONO, 19), INK_3)
+    text(d, (pad, 116), HEAD[0], font(mc.SANS_B, 60), INK)
+    text(d, (pad, 186), HEAD[1], font(mc.SANS_B, 60), INK)
+    text(d, (pad, 274), SUB[0], font(mc.SANS, 27), INK_2)
+    text(d, (pad, 310), SUB[1], font(mc.SANS, 27), INK_2)
+
+
+def render(a):
+    W, H = MODES[a.mode]
+    base = Image.new("RGBA", (W * S, H * S), SURFACE + (255,))
+    (render_devto if a.mode == "devto" else render_linkedin)(base, W, H)
 
     out = pathlib.Path(a.out)
     base.convert("RGB").resize((W, H), Image.LANCZOS).save(out, quality=92, subsampling=0)
@@ -207,6 +307,7 @@ def render(a):
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--out", required=True)
+    p.add_argument("--mode", choices=sorted(MODES), default="devto")
     p.add_argument("--content-address", action="store_true")
     p.add_argument("--url-base")
     sys.exit(render(p.parse_args()))
