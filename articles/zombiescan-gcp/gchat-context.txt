@@ -1,0 +1,5 @@
+zombiescan is a local-first CLI that scans Google Cloud projects for resources nothing is using, prices each one from the Cloud Billing Catalog API, and drafts the cleanup. It runs on your own Application Default Credentials, read-only, and nothing leaves the machine.
+
+A Persistent Disk survives the instance it was attached to. A static IP outlives the migration that freed it. A GKE cluster keeps charging its management fee after the last node pool scaled to zero. Each one bills every hour and reports nothing.
+
+There is a Claude Code plugin over the same engine, and the source is MIT: https://github.com/xbill9/zombiescan-gcp
